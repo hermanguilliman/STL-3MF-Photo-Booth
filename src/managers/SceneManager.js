@@ -59,6 +59,23 @@ class SceneManager {
 
         document.body.appendChild(this.renderer.domElement);
 
+        this.renderer.domElement.addEventListener("webglcontextlost", (e) => {
+            e.preventDefault();
+            console.warn("WebGL Context Lost");
+
+            cancelAnimationFrame(window.animationId);
+            showToast("WebGL Context Lost. Please reload.", 10000, "error");
+        });
+
+        this.renderer.domElement.addEventListener(
+            "webglcontextrestored",
+            () => {
+                console.log("WebGL Context Restored");
+
+                window.location.reload();
+            }
+        );
+
         this.#setupLightGroup();
         this.#setupPostProcessing(quality);
         this.#setupGrid();
