@@ -68,7 +68,7 @@ class MaterialManager {
                     if (uLayerActive) {
                         float k = 6.2831853 / uLayerHeight;
                         float dys = cos(vWorldY * k);
-                        float verticalFactor = 1.0 - abs(normal.y);
+                        float verticalFactor = 1.0 - abs(normal.y); 
                         normal.y += dys * uLayerStrength * verticalFactor;
                         normal = normalize(normal);
                     }`
@@ -96,8 +96,14 @@ class MaterialManager {
         this.#updateTransparency();
 
         if (gui) {
+            const currentData = state.getAll();
+
             gui.controllersRecursive().forEach((c) => {
-                if (c.object === state.getAll() || c.object === this.material) {
+                if (
+                    c.property in updates ||
+                    (preset.color && c.property === "color")
+                ) {
+                    c.object[c.property] = currentData[c.property];
                     c.updateDisplay();
                 }
             });
