@@ -17,32 +17,40 @@ import { showToast } from "./utils/helpers.js";
 import { buildGui, updateOrientationDisplay } from "./gui/GUIBuilder.js";
 
 class App {
-    #controls;
+    controls;
     #qualityManager;
     #lastDimUpdate = 0;
+    #dimUpdateInterval;
+    #isInitialized = false;
 
     constructor() {
+        this.#dimUpdateInterval = isMobile ? 100 : 50;
+
         this.#setupControls();
         this.#setupQuality();
-        this.#setupEventListeners();
-        this.#initScene();
-        this.#createTestModel();
-        this.#animate();
+
+        requestAnimationFrame(() => {
+            this.#setupEventListeners();
+            this.#initScene();
+            this.#createTestModel();
+            this.#isInitialized = true;
+            this.#animate();
+        });
     }
 
     #setupControls() {
         const { camera, renderer } = sceneManager;
 
-        this.#controls = new OrbitControls(camera, renderer.domElement);
-        this.#controls.enableDamping = true;
-        this.#controls.dampingFactor = isMobile ? 0.1 : 0.08;
-        this.#controls.autoRotate = state.get("autoRotate");
-        this.#controls.autoRotateSpeed = isMobile ? 1 : 2;
+        this.controls = new OrbitControls(camera, renderer.domElement);
+        this.controls.enableDamping = true;
+        this.controls.dampingFactor = isMobile ? 0.1 : 0.08;
+        this.controls.autoRotate = state.get("autoRotate");
+        this.controls.autoRotateSpeed = isMobile ? 1 : 2;
 
         if (isMobile) {
-            this.#controls.rotateSpeed = 0.8;
-            this.#controls.zoomSpeed = 0.8;
-            this.#controls.panSpeed = 0.8;
+            this.controls.rotateSpeed = 0.8;
+            this.controls.zoomSpeed = 0.8;
+            this.controls.panSpeed = 0.8;
         }
     }
 
@@ -67,71 +75,68 @@ class App {
         }
 
         if (state.get("showDimensions")) {
-            setTimeout(() => {
-                document.getElementById("dimBtn")?.classList.add("active");
-                document.getElementById("dimLabels")?.classList.add("visible");
-            }, 100);
+            document.getElementById("dimBtn")?.classList.add("active");
+            document.getElementById("dimLabels")?.classList.add("visible");
         }
 
-        buildGui(this.#controls, this);
+        buildGui(this.controls, this);
     }
 
     #setupEventListeners() {
         const dropZone = document.getElementById("drop-zone");
-        window.addEventListener("dragover", (e) => {
-            e.preventDefault();
-            dropZone.classList.add("active");
-        });
-        window.addEventListener("dragleave", () =>
-            dropZone.classList.remove("active")
-        );
-        window.addEventListener("drop", (e) => {
-            e.preventDefault();
-            dropZone.classList.remove("active");
-            if (e.dataTransfer.files[0])
-                this.#handleFile(e.dataTransfer.files[0]);
-        });
+        if (dropZone) {
+            window.addEventListener("dragover", (e) => {
+                e.preventDefault();
+                dropZone.classList.add("active");
+            });
+            window.addEventListener("dragleave", () =>
+                dropZone.classList.remove("active")
+            );
+            window.addEventListener("drop", (e) => {
+                e.preventDefault();
+                dropZone.classList.remove("active");
+                if (e.dataTransfer.files[0])
+                    this.#handleFile(e.dataTransfer.files[0]);
+            });
+        }
 
-        document.getElementById("fileInput").addEventListener("change", (e) => {
-            if (e.target.files[0]) this.#handleFile(e.target.files[0]);
-        });
+        document
+            .getElementById("fileInput")
+            ?.addEventListener("change", (e) => {
+                if (e.target.files[0]) this.#handleFile(e.target.files[0]);
+            });
 
         document
             .getElementById("screenshotSceneBtn")
-            .addEventListener("click", () => screenshotManager.captureScene());
+            ?.addEventListener("click", () => screenshotManager.captureScene());
         document
             .getElementById("screenshotModelBtn")
-            .addEventListener("click", () => screenshotManager.captureModel());
-
-        document.getElementById("dimBtn").addEventListener("click", () => {
-            dimensionsManager.toggle();
-        });
-
+            ?.addEventListener("click", () => screenshotManager.captureModel());
+        document
+            .getElementById("dimBtn")
+            ?.addEventListener("click", () => dimensionsManager.toggle());
         document
             .getElementById("bedBtn")
-            .addEventListener("click", () => this.#toggleBed());
+            ?.addEventListener("click", () => this.#toggleBed());
 
         const helpBtn = document.getElementById("helpBtn");
         const helpContent = document.getElementById("helpContent");
         const langMenu = document.getElementById("langMenu");
 
-        if (helpBtn && helpContent) {
-            helpBtn.addEventListener("click", (e) => {
-                e.stopPropagation();
-                helpContent.classList.toggle("visible");
-                langMenu?.classList.remove("visible");
-            });
-        }
+        helpBtn?.addEventListener("click", (e) => {
+            e.stopPropagation();
+            helpContent?.classList.toggle("visible");
+            langMenu?.classList.remove("visible");
+        });
 
         document.addEventListener("click", () => {
             helpContent?.classList.remove("visible");
             langMenu?.classList.remove("visible");
         });
 
-        const mobileZUp = document.getElementById("mobileZUp");
-        if (mobileZUp) {
-            mobileZUp.addEventListener("click", () => this.#toggleZUp());
-        }
+        document
+            .getElementById("mobileZUp")
+            ?.addEventListener("click", () => this.#toggleZUp());
 
         window.addEventListener("keydown", (e) => {
             if (e.target.tagName === "INPUT") return;
@@ -150,17 +155,19 @@ class App {
             else if (changed) showToast(t.toastFits, 2000, "success");
         });
 
-        globalEvents.on("language:change", () =>
-            buildGui(this.#controls, this)
-        );
+        globalEvents.on("language:change", () => buildGui(this.controls, this));
 
         document.addEventListener("visibilitychange", () => {
-            this.#controls.autoRotate = document.hidden
+            this.controls.autoRotate = document.hidden
                 ? false
                 : state.get("autoRotate");
         });
 
-        window.addEventListener("resize", () => sceneManager.handleResize());
+        let resizeTimeout;
+        window.addEventListener("resize", () => {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => sceneManager.handleResize(), 100);
+        });
     }
 
     #toggleZUp() {
@@ -188,7 +195,7 @@ class App {
         try {
             const name = await modelManager.loadFile(
                 file,
-                this.#controls,
+                this.controls,
                 this.setView.bind(this),
                 t
             );
@@ -206,7 +213,7 @@ class App {
     #toggleBed() {
         const active = !state.get("bedActive");
         state.set("bedActive", active);
-        document.getElementById("bedBtn").classList.toggle("active", active);
+        document.getElementById("bedBtn")?.classList.toggle("active", active);
 
         if (active) {
             const preset = state.get("lastActiveBedPreset") || "ender3";
@@ -218,7 +225,7 @@ class App {
             bedManager.update();
         }
 
-        buildGui(this.#controls, this);
+        buildGui(this.controls, this);
     }
 
     #createTestModel() {
@@ -231,7 +238,7 @@ class App {
         sceneManager.scene.add(mesh);
         modelManager.mesh = mesh;
         modelManager.placeOnFloor();
-        modelManager.fitCamera(this.#controls, this.setView.bind(this));
+        modelManager.fitCamera(this.controls, this.setView.bind(this));
 
         if (state.get("bedActive")) {
             setTimeout(() => bedManager.checkFit(true), 500);
@@ -251,7 +258,7 @@ class App {
         }
 
         const dist = dim * 1.8;
-        this.#controls.target.copy(center);
+        this.controls.target.copy(center);
         const pos = center.clone();
 
         const offsets = {
@@ -270,11 +277,11 @@ class App {
     #animate() {
         requestAnimationFrame(() => this.#animate());
 
-        this.#controls.update();
+        this.controls.update();
         this.#qualityManager.update();
 
         const now = performance.now();
-        if (now - this.#lastDimUpdate >= (isMobile ? 100 : 16)) {
+        if (now - this.#lastDimUpdate >= this.#dimUpdateInterval) {
             dimensionsManager.update();
             this.#lastDimUpdate = now;
         }
@@ -285,7 +292,6 @@ class App {
 
 const app = new App();
 
+window.app = app;
 window.setView = (type) => app.setView(type);
 window.buildGui = () => buildGui(app.controls, app);
-
-window.app = app;

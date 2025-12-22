@@ -1,29 +1,47 @@
 import * as THREE from "three";
-import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
+import { HDRLoader } from "three/examples/jsm/loaders/HDRLoader.js";
 import { sceneManager } from "./SceneManager.js";
 import { state } from "../core/StateManager.js";
 import { HDR_FILES } from "../core/constants.js";
 
 class EnvironmentManager {
-    #loader = new RGBELoader().setPath("img/hdri/");
+    #loader = new HDRLoader().setPath("img/hdri/");
     #currentTexture = null;
+    #loading = false;
 
     loadHDRI(key) {
         const fileName = HDR_FILES[key];
-        if (!fileName) return;
+        if (!fileName || this.#loading) return;
 
-        this.#loader.load(fileName, (texture) => {
-            texture.mapping = THREE.EquirectangularReflectionMapping;
-            this.#currentTexture = texture;
-            sceneManager.scene.environment = texture;
-            this.updateBackground();
+        this.#loading = true;
 
-            const loader = document.getElementById("loader");
-            if (loader) {
-                loader.style.opacity = "0";
-                setTimeout(() => loader.remove(), 600);
+        this.#loader.load(
+            fileName,
+            (texture) => {
+                texture.mapping = THREE.EquirectangularReflectionMapping;
+
+                if (this.#currentTexture) {
+                    this.#currentTexture.dispose();
+                }
+
+                this.#currentTexture = texture;
+                sceneManager.scene.environment = texture;
+                this.updateBackground();
+
+                const loader = document.getElementById("loader");
+                if (loader) {
+                    loader.style.opacity = "0";
+                    setTimeout(() => loader.remove(), 600);
+                }
+
+                this.#loading = false;
+            },
+            undefined,
+            (error) => {
+                console.warn("Failed to load HDRI:", error);
+                this.#loading = false;
             }
-        });
+        );
     }
 
     updateBackground() {
