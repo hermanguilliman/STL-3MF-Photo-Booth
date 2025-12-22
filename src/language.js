@@ -1,4 +1,4 @@
-import { translations } from "./translations.js";
+import { translations } from './i18n';
 import { saveSetting, loadSettings } from "./storage.js";
 
 let CUR_LANG = "ru";
