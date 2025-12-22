@@ -42,6 +42,9 @@ class LightingManager {
         light.castShadow = true;
         light.shadow.mapSize.setScalar(settings.shadowMapSize);
         light.shadow.bias = -0.0001;
+
+        light.shadow.normalBias = 0.05;
+
         if (isMobile) light.shadow.radius = 2;
         return light;
     }
