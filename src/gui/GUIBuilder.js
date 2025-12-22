@@ -1,6 +1,7 @@
 import { GUI } from "lil-gui";
 
 import { state } from "../core/StateManager.js";
+import { globalEvents } from "../core/EventEmitter.js";
 import { PRINTERS } from "../core/constants.js";
 import { materialManager } from "../managers/MaterialManager.js";
 import { lightingManager } from "../managers/LightingManager.js";
@@ -31,6 +32,7 @@ export function buildGui(controls, app) {
 
     rotationControllers = { x: null, y: null, z: null };
     const t = i18n.t;
+
     const s = state.getAll();
 
     gui = new GUI({ title: t.guiTitle, width: 260 });
@@ -43,6 +45,8 @@ export function buildGui(controls, app) {
     buildOrientationFolder(t, app);
     buildSettingsFolder(t);
 
+    setupStateSync(s);
+
     if (window.innerWidth > 600) {
         gui.folders[0]?.open();
     } else {
@@ -52,12 +56,34 @@ export function buildGui(controls, app) {
     return gui;
 }
 
+function setupStateSync(localState) {
+    const syncCallback = ({ key, value }) => {
+        localState[key] = value;
+
+        const updateRecursive = (parent) => {
+            parent.controllers.forEach((c) => {
+                if (c.property === key) c.updateDisplay();
+            });
+            parent.folders.forEach((f) => updateRecursive(f));
+        };
+
+        if (gui) updateRecursive(gui);
+    };
+
+    const unsubscribe = globalEvents.on("change", syncCallback);
+
+    const originalDestroy = gui.destroy.bind(gui);
+    gui.destroy = () => {
+        unsubscribe();
+        originalDestroy();
+    };
+}
+
 function buildMaterialFolder(t, s) {
     const folder = gui.addFolder(t.fMat);
 
     addDropdown(folder, s, "preset", t.presets, (v) => {
-        state.set("preset", v);
-        materialManager.applyPreset(v, gui);
+        materialManager.applyPreset(v);
     }).name(t.pPreset);
 
     folder
@@ -118,7 +144,7 @@ function buildPrintFolder(t, s) {
 
 function buildBedFolder(t, s) {
     const folder = gui.addFolder(t.fBed);
-    let bedXCtrl, bedYCtrl, bedZCtrl, bedNameCtrl;
+    let bedNameCtrl;
 
     const printerOptions = getPrinterOptions(t);
 
@@ -133,12 +159,12 @@ function buildBedFolder(t, s) {
 
         if (v !== "custom" && v !== "none") {
             const preset = PRINTERS[v];
-            state.set("bedX", preset.x);
-            state.set("bedY", preset.y);
-            state.set("bedZ", preset.z);
-            bedXCtrl?.updateDisplay();
-            bedYCtrl?.updateDisplay();
-            bedZCtrl?.updateDisplay();
+
+            state.setMultiple({
+                bedX: preset.x,
+                bedY: preset.y,
+                bedZ: preset.z,
+            });
         }
 
         bedNameCtrl?.show(v === "custom");
@@ -152,24 +178,25 @@ function buildBedFolder(t, s) {
     }).name(t.bedPreset);
 
     const bedSizeChange = (prop) => (v) => {
+        const updates = { [prop]: v };
         if (state.get("bedPreset") !== "custom") {
-            state.set("bedPreset", "custom");
-            state.set("lastActiveBedPreset", "custom");
+            updates.bedPreset = "custom";
+            updates.lastActiveBedPreset = "custom";
         }
-        state.set(prop, v);
+        state.setMultiple(updates);
         bedManager.update();
         bedManager.checkFit(true);
     };
 
-    bedXCtrl = folder
+    folder
         .add(s, "bedX", 50, 500, 1)
         .name(t.bedX)
         .onChange(bedSizeChange("bedX"));
-    bedYCtrl = folder
+    folder
         .add(s, "bedY", 50, 500, 1)
         .name(t.bedY)
         .onChange(bedSizeChange("bedY"));
-    bedZCtrl = folder
+    folder
         .add(s, "bedZ", 50, 500, 1)
         .name(t.bedZ)
         .onChange(bedSizeChange("bedZ"));

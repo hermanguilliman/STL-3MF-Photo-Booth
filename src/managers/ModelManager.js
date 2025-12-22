@@ -17,8 +17,36 @@ class ModelManager {
     }
 
     set mesh(value) {
+        this.#disposeCurrentModel();
+
         this.#mesh = value;
+        sceneManager.scene.add(value);
         globalEvents.emit("mesh:change", value);
+    }
+
+    #disposeCurrentModel() {
+        if (!this.#mesh) return;
+
+        sceneManager.scene.remove(this.#mesh);
+
+        this.#mesh.traverse((node) => {
+            if (node.isMesh) {
+                node.geometry?.dispose();
+
+                if (
+                    node.material &&
+                    node.material !== materialManager.material
+                ) {
+                    if (Array.isArray(node.material)) {
+                        node.material.forEach((m) => m.dispose());
+                    } else {
+                        node.material.dispose();
+                    }
+                }
+            }
+        });
+
+        this.#mesh = null;
     }
 
     placeOnFloor() {
@@ -27,28 +55,11 @@ class ModelManager {
         this.#mesh.position.y = 0;
         this.#mesh.updateMatrixWorld(true);
 
-        let minY = Infinity;
-        const vertex = new THREE.Vector3();
+        const box = new THREE.Box3().setFromObject(this.#mesh);
 
-        this.#mesh.traverse((child) => {
-            if (!child.isMesh || !child.geometry) return;
-            child.updateMatrixWorld(true);
-
-            const pos = child.geometry.attributes.position;
-            for (let i = 0; i < pos.count; i++) {
-                vertex
-                    .fromBufferAttribute(pos, i)
-                    .applyMatrix4(child.matrixWorld);
-                if (vertex.y < minY) minY = vertex.y;
-            }
-        });
-
-        if (!isFinite(minY)) {
-            const box = new THREE.Box3().setFromObject(this.#mesh);
-            minY = isFinite(box.min.y) ? box.min.y : 0;
+        if (isFinite(box.min.y)) {
+            this.#mesh.position.y = -box.min.y;
         }
-
-        this.#mesh.position.y = -minY;
     }
 
     applyRotation() {
@@ -126,11 +137,6 @@ class ModelManager {
 
         const buffer = await this.#readFile(file);
 
-        if (this.#mesh) {
-            sceneManager.scene.remove(this.#mesh);
-            this.#mesh.geometry?.dispose();
-        }
-
         const newMesh =
             ext === "stl" ? this.#parseSTL(buffer) : this.#parse3MF(buffer);
 
@@ -139,7 +145,6 @@ class ModelManager {
         state.setRotation(0, 0, 0);
         state.saveRotation();
 
-        sceneManager.scene.add(newMesh);
         this.mesh = newMesh;
 
         this.applyRotation();
@@ -159,11 +164,17 @@ class ModelManager {
 
     #parseSTL(buffer) {
         const geometry = this.#loaderSTL.parse(buffer);
-        geometry.center();
+
         geometry.computeVertexNormals();
 
         const mesh = new THREE.Mesh(geometry, materialManager.material);
         mesh.castShadow = mesh.receiveShadow = true;
+
+        geometry.computeBoundingBox();
+        const center = new THREE.Vector3();
+        geometry.boundingBox.getCenter(center);
+        mesh.geometry.translate(-center.x, -center.y, -center.z);
+
         return mesh;
     }
 
@@ -186,21 +197,13 @@ class ModelManager {
 
         const box = new THREE.Box3().setFromObject(group);
         const center = box.getCenter(new THREE.Vector3());
-        group.position.set(-center.x, 0, -center.z);
 
         const wrapper = new THREE.Group();
         wrapper.add(group);
+
+        group.position.set(-center.x, 0, -center.z);
+
         return wrapper;
-    }
-
-    centerOnBed() {
-        if (!this.#mesh || !state.get("bedActive")) return;
-
-        const box = new THREE.Box3().setFromObject(this.#mesh);
-        const center = box.getCenter(new THREE.Vector3());
-
-        this.#mesh.position.x -= center.x;
-        this.#mesh.position.z -= center.z;
     }
 }
 

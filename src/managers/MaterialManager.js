@@ -76,7 +76,7 @@ class MaterialManager {
         };
     }
 
-    applyPreset(id, gui = null) {
+    applyPreset(id) {
         const preset = MATERIAL_PRESETS[id];
         if (!preset) return;
 
@@ -94,20 +94,6 @@ class MaterialManager {
 
         state.setMultiple(updates);
         this.#updateTransparency();
-
-        if (gui) {
-            const currentData = state.getAll();
-
-            gui.controllersRecursive().forEach((c) => {
-                if (
-                    c.property in updates ||
-                    (preset.color && c.property === "color")
-                ) {
-                    c.object[c.property] = currentData[c.property];
-                    c.updateDisplay();
-                }
-            });
-        }
     }
 
     setProperty(prop, value) {
@@ -127,15 +113,6 @@ class MaterialManager {
         this.material.transparent =
             this.material.transmission > 0.01 || this.material.opacity < 1;
         this.material.needsUpdate = true;
-    }
-
-    syncWithState() {
-        const s = state.getAll();
-        this.material.color.set(s.color);
-        this.#materialProps.forEach((prop) => {
-            this.material[prop] = s[prop];
-        });
-        this.#updateTransparency();
     }
 }
 
