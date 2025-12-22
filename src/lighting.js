@@ -19,16 +19,8 @@ function createShadowLight(light) {
     }
 }
 
-export function setupLighting(modeId) {
-    while (lightGroup.children.length > 0) {
-        const child = lightGroup.children[0];
-        if (child.shadow && child.shadow.map) {
-            child.shadow.map.dispose();
-        }
-        lightGroup.remove(child);
-    }
-
-    if (modeId === "studio") {
+const LIGHTING_MODES = {
+    studio: () => {
         const key = new THREE.DirectionalLight(0xffffff, 2.0);
         key.position.set(50, 80, 50);
         createShadowLight(key);
@@ -36,21 +28,27 @@ export function setupLighting(modeId) {
         const fill = new THREE.DirectionalLight(0xeef2ff, 0.8);
         fill.position.set(-50, 20, 20);
 
+        const lights = [key, fill];
+
         if (!isMobile) {
             const rim = new THREE.SpotLight(0xffffff, 3.0);
             rim.position.set(0, 60, -80);
-            lightGroup.add(rim);
+            lights.push(rim);
         }
 
-        lightGroup.add(key, fill);
-    } else if (modeId === "warm") {
+        return lights;
+    },
+
+    warm: () => {
         const sun = new THREE.DirectionalLight(0xffaa77, 2.0);
         sun.position.set(80, 40, 80);
         createShadowLight(sun);
 
         const amb = new THREE.HemisphereLight(0xffccaa, 0x553322, 0.8);
-        lightGroup.add(sun, amb);
-    } else if (modeId === "cyber") {
+        return [sun, amb];
+    },
+
+    cyber: () => {
         const key = new THREE.DirectionalLight(0x00d2ff, 2.0);
         key.position.set(50, 80, 50);
         createShadowLight(key);
@@ -58,18 +56,23 @@ export function setupLighting(modeId) {
         const rim = new THREE.SpotLight(0xff00ff, isMobile ? 4.0 : 8.0);
         rim.position.set(-50, 50, -50);
 
-        lightGroup.add(key, rim);
-    } else if (modeId === "soft") {
+        return [key, rim];
+    },
+
+    soft: () => {
         const amb = new THREE.AmbientLight(0xffffff, 0.7);
         const dir = new THREE.DirectionalLight(0xffffff, 0.8);
         dir.position.set(10, 80, 20);
         createShadowLight(dir);
 
-        lightGroup.add(amb, dir);
-    } else if (modeId === "contrast") {
+        return [amb, dir];
+    },
+
+    contrast: () => {
+        const intensity = isMobile ? 3.0 : 4.0;
         const key = new THREE.SpotLight(
             0xffffff,
-            isMobile ? 3.0 : 4.0,
+            intensity,
             400,
             THREE.MathUtils.degToRad(25),
             0.4
@@ -80,30 +83,37 @@ export function setupLighting(modeId) {
         const fill = new THREE.DirectionalLight(0x99aab5, 0.3);
         fill.position.set(-80, 30, -40);
 
-        lightGroup.add(key, fill);
+        const lights = [key, fill];
 
         if (!isMobile) {
             const rim = new THREE.DirectionalLight(0xfff2d0, 1.4);
             rim.position.set(-40, 60, 140);
-            lightGroup.add(rim);
+            lights.push(rim);
         }
-    } else if (modeId === "north") {
+
+        return lights;
+    },
+
+    north: () => {
         const hemi = new THREE.HemisphereLight(0xd8ecff, 0x223344, 1.2);
         const sun = new THREE.DirectionalLight(0xcbe3ff, 0.9);
         sun.position.set(-30, 120, -60);
         createShadowLight(sun);
 
-        lightGroup.add(hemi, sun);
+        const lights = [hemi, sun];
 
         if (!isMobile) {
             const bounce = new THREE.DirectionalLight(0x8ab6d6, 0.4);
             bounce.position.set(80, -20, 40);
-            lightGroup.add(bounce);
+            lights.push(bounce);
         }
-    } else if (modeId === "ring") {
+
+        return lights;
+    },
+
+    ring: () => {
         const ring = new THREE.PointLight(0xffffff, 2.5, 400);
         ring.position.set(0, 40, 90);
-
         if (qualitySettings.shadowsEnabled) {
             ring.castShadow = true;
             ring.shadow.mapSize.set(
@@ -115,7 +125,7 @@ export function setupLighting(modeId) {
         const top = new THREE.PointLight(0xfff6e5, 1.4, 500);
         top.position.set(0, 140, 0);
 
-        lightGroup.add(ring, top);
+        const lights = [ring, top];
 
         if (!isMobile) {
             const floor = new THREE.SpotLight(
@@ -127,12 +137,17 @@ export function setupLighting(modeId) {
             );
             floor.position.set(0, -60, 0);
             floor.target.position.set(0, 0, 0);
-            lightGroup.add(floor, floor.target);
+            lights.push(floor, floor.target);
         }
-    } else if (modeId === "night") {
+
+        return lights;
+    },
+
+    night: () => {
+        const intensity1 = isMobile ? 3.0 : 5.0;
         const neon1 = new THREE.SpotLight(
             0x46c9ff,
-            isMobile ? 3.0 : 5.0,
+            intensity1,
             500,
             THREE.MathUtils.degToRad(35),
             0.5
@@ -140,16 +155,17 @@ export function setupLighting(modeId) {
         neon1.position.set(80, 30, -80);
         createShadowLight(neon1);
 
+        const intensity2 = isMobile ? 2.5 : 4.0;
         const neon2 = new THREE.SpotLight(
             0xff5ef8,
-            isMobile ? 2.5 : 4.0,
+            intensity2,
             500,
             THREE.MathUtils.degToRad(40),
             0.5
         );
         neon2.position.set(-70, 20, 90);
 
-        lightGroup.add(neon1, neon2);
+        const lights = [neon1, neon2];
 
         if (!isMobile) {
             neon2.castShadow = true;
@@ -160,9 +176,31 @@ export function setupLighting(modeId) {
 
             const glow = new THREE.PointLight(0x2244ff, 0.8, 600);
             glow.position.set(0, 140, 0);
-            lightGroup.add(glow);
+            lights.push(glow);
         }
+
+        return lights;
+    },
+};
+
+export function setupLighting(modeId) {
+    while (lightGroup.children.length > 0) {
+        const child = lightGroup.children[0];
+        if (child.shadow?.map) {
+            child.shadow.map.dispose();
+        }
+        lightGroup.remove(child);
     }
+
+    const createLights = LIGHTING_MODES[modeId];
+
+    if (!createLights) {
+        console.warn(`Unknown lighting mode: ${modeId}`);
+        return;
+    }
+
+    const lights = createLights();
+    lightGroup.add(...lights);
 
     updateShadows();
 }
