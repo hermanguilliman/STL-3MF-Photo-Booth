@@ -1,330 +1,291 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
-import {
-    scene,
-    camera,
-    renderer,
-    composer,
-    handleResize,
-    gridHelper,
-    plane,
-    saoPass,
-    fxaaPass,
-    updateShadows,
-} from "./scene.js";
-import {
-    state,
-    rotationState,
-    savedRotationState,
-    setSavedRotationState,
-    updateState,
-} from "./state.js";
-import { setupLighting } from "./lighting.js";
-import { loadHDRI, updateBackgroundState } from "./environment.js";
-import { material } from "./materials.js";
-import {
-    handleFile,
-    getCurrentMesh,
-    setCurrentMesh,
-    placeOnFloor,
-    fitCamera,
-    applyRotation,
-} from "./model.js";
-import {
-    updateBedVisual,
-    checkModelFits,
-    bedGroup,
-    setBedLabelVisible,
-} from "./bed.js";
-import {
-    toggleDimensions,
-    updateDimensions,
-    forceUpdateDimensions,
-    initDimensionsFromState,
-} from "./dimensions.js";
-import { screenshotScene, screenshotModel } from "./screenshot.js";
-import { buildGui, updateOrientationDisplay } from "./gui.js";
+import { state } from "./core/StateManager.js";
+import { globalEvents } from "./core/EventEmitter.js";
+import { sceneManager } from "./managers/SceneManager.js";
+import { materialManager } from "./managers/MaterialManager.js";
+import { modelManager } from "./managers/ModelManager.js";
+import { lightingManager } from "./managers/LightingManager.js";
+import { environmentManager } from "./managers/EnvironmentManager.js";
+import { bedManager } from "./managers/BedManager.js";
+import { dimensionsManager } from "./managers/DimensionsManager.js";
+import { screenshotManager } from "./managers/ScreenshotManager.js";
+import { QualityManager, isMobile } from "./managers/QualityManager.js";
+import { i18n } from "./i18n/LanguageManager.js";
+import { showToast } from "./utils/helpers.js";
+import { buildGui, updateOrientationDisplay } from "./gui/GUIBuilder.js";
 
-import {
-    detectLanguage,
-    setBuildGuiCallback,
-    translations,
-    getCurLang,
-} from "./language.js";
-import { showToast } from "./utils.js";
-import { PRINTER_PRESETS } from "./constants.js";
-import { setMesh } from "./meshStore.js";
-import {
-    AdaptiveQuality,
-    isMobile,
-    setGlobalAdaptiveQuality,
-} from "./quality.js";
+class App {
+    #controls;
+    #qualityManager;
+    #lastDimUpdate = 0;
 
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = isMobile ? 0.1 : 0.08;
-controls.autoRotate = state.autoRotate;
-controls.autoRotateSpeed = isMobile ? 1.0 : 2.0;
-
-if (isMobile) {
-    controls.rotateSpeed = 0.8;
-    controls.zoomSpeed = 0.8;
-    controls.panSpeed = 0.8;
-}
-
-const adaptiveQuality = new AdaptiveQuality(
-    renderer,
-    composer,
-    saoPass,
-    fxaaPass,
-    (quality, settings) => {
-        console.log(`Quality changed to: ${quality}`);
+    constructor() {
+        this.#setupControls();
+        this.#setupQuality();
+        this.#setupEventListeners();
+        this.#initScene();
+        this.#createTestModel();
+        this.#animate();
     }
-);
 
-setGlobalAdaptiveQuality(adaptiveQuality);
+    #setupControls() {
+        const { camera, renderer } = sceneManager;
 
-setupLighting(state.lighting);
-loadHDRI(state.hdri);
-gridHelper.visible = state.grid;
-plane.visible = state.shadows;
+        this.#controls = new OrbitControls(camera, renderer.domElement);
+        this.#controls.enableDamping = true;
+        this.#controls.dampingFactor = isMobile ? 0.1 : 0.08;
+        this.#controls.autoRotate = state.get("autoRotate");
+        this.#controls.autoRotateSpeed = isMobile ? 1 : 2;
 
-if (state.bedActive && state.bedPreset !== "none") {
-    updateBedVisual();
-    const bedBtn = document.getElementById("bedBtn");
-    if (bedBtn) bedBtn.classList.add("active");
-}
+        if (isMobile) {
+            this.#controls.rotateSpeed = 0.8;
+            this.#controls.zoomSpeed = 0.8;
+            this.#controls.panSpeed = 0.8;
+        }
+    }
 
-if (state.showDimensions) {
-    setTimeout(() => {
-        const dimBtn = document.getElementById("dimBtn");
-        if (dimBtn) dimBtn.classList.add("active");
-        const dimLabels = document.getElementById("dimLabels");
-        if (dimLabels) dimLabels.classList.add("visible");
-    }, 100);
-}
-
-function setView(type, centerOverride = null, dimOverride = null) {
-    const currentMesh = getCurrentMesh();
-    let center = centerOverride;
-    let dim = dimOverride;
-
-    if (!center || !dim) {
-        if (!currentMesh) return;
-        const box = new THREE.Box3().setFromObject(currentMesh);
-        center = box.getCenter(new THREE.Vector3());
-        dim = Math.max(
-            box.max.x - box.min.x,
-            box.max.y - box.min.y,
-            box.max.z - box.min.z
+    #setupQuality() {
+        const { renderer, composer, saoPass, fxaaPass } = sceneManager;
+        this.#qualityManager = new QualityManager(
+            renderer,
+            composer,
+            saoPass,
+            fxaaPass
         );
+        sceneManager.setQualityManager(this.#qualityManager);
     }
 
-    const dist = dim * 1.8;
-    controls.target.copy(center);
-    const pos = center.clone();
+    #initScene() {
+        lightingManager.setup(state.get("lighting"));
+        environmentManager.loadHDRI(state.get("hdri"));
 
-    switch (type) {
-        case "iso":
-            pos.add(new THREE.Vector3(dist, dist * 0.6, dist));
-            break;
-        case "front":
-            pos.add(new THREE.Vector3(0, 0, dist));
-            break;
-        case "top":
-            pos.add(new THREE.Vector3(0, dist, 0));
-            break;
-        case "side":
-            pos.add(new THREE.Vector3(dist, 0, 0));
-            break;
-    }
-
-    camera.position.copy(pos);
-    camera.lookAt(center);
-
-    updateShadows();
-}
-
-window.setView = setView;
-
-window.addEventListener("keydown", (e) => {
-    if (e.target.tagName === "INPUT") return;
-    if (e.key === "1") setView("iso");
-    if (e.key === "2") setView("front");
-    if (e.key === "3") setView("top");
-    if (e.key === "4") setView("side");
-});
-
-const dropZone = document.getElementById("drop-zone");
-window.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    dropZone.classList.add("active");
-});
-window.addEventListener("dragleave", () => dropZone.classList.remove("active"));
-window.addEventListener("drop", (e) => {
-    e.preventDefault();
-    dropZone.classList.remove("active");
-    if (e.dataTransfer.files[0]) {
-        handleFile(e.dataTransfer.files[0], controls, setView);
-    }
-});
-
-document.getElementById("fileInput").addEventListener("change", (e) => {
-    if (e.target.files[0]) {
-        handleFile(e.target.files[0], controls, setView);
-    }
-});
-
-document
-    .getElementById("screenshotSceneBtn")
-    .addEventListener("click", screenshotScene);
-document
-    .getElementById("screenshotModelBtn")
-    .addEventListener("click", screenshotModel);
-
-document.getElementById("dimBtn").addEventListener("click", () => {
-    toggleDimensions();
-    updateState("showDimensions", state.showDimensions);
-});
-
-document.getElementById("bedBtn").addEventListener("click", () => {
-    state.bedActive = !state.bedActive;
-    updateState("bedActive", state.bedActive);
-
-    const btn = document.getElementById("bedBtn");
-    btn.classList.toggle("active", state.bedActive);
-
-    if (state.bedActive) {
-        const presetToUse = state.lastActiveBedPreset || "ender3";
-        const finalPreset = PRINTER_PRESETS[presetToUse]
-            ? presetToUse
-            : "ender3";
-
-        state.bedPreset = finalPreset;
-        const preset = PRINTER_PRESETS[finalPreset];
-
-        if (finalPreset !== "custom") {
-            state.bedX = preset.x;
-            state.bedY = preset.y;
-            state.bedZ = preset.z;
-            updateState("bedX", preset.x);
-            updateState("bedY", preset.y);
-            updateState("bedZ", preset.z);
+        if (state.get("bedActive") && state.get("bedPreset") !== "none") {
+            bedManager.update();
+            document.getElementById("bedBtn")?.classList.add("active");
         }
 
-        updateState("bedPreset", finalPreset);
-        buildGui(controls);
-        updateBedVisual();
+        if (state.get("showDimensions")) {
+            setTimeout(() => {
+                document.getElementById("dimBtn")?.classList.add("active");
+                document.getElementById("dimLabels")?.classList.add("visible");
+            }, 100);
+        }
 
-        setTimeout(() => {
-            checkModelFits(true);
-        }, 100);
-    } else {
-        state.bedPreset = "none";
-        updateState("bedPreset", "none");
-        buildGui(controls);
-        updateBedVisual();
+        buildGui(this.#controls, this);
     }
-});
 
-const mobileZUp = document.getElementById("mobileZUp");
-if (mobileZUp) {
-    mobileZUp.addEventListener("click", () => {
-        const isZUp =
-            rotationState.x === -90 &&
-            rotationState.y === 0 &&
-            rotationState.z === 0;
+    #setupEventListeners() {
+        const dropZone = document.getElementById("drop-zone");
+        window.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            dropZone.classList.add("active");
+        });
+        window.addEventListener("dragleave", () =>
+            dropZone.classList.remove("active")
+        );
+        window.addEventListener("drop", (e) => {
+            e.preventDefault();
+            dropZone.classList.remove("active");
+            if (e.dataTransfer.files[0])
+                this.#handleFile(e.dataTransfer.files[0]);
+        });
+
+        document.getElementById("fileInput").addEventListener("change", (e) => {
+            if (e.target.files[0]) this.#handleFile(e.target.files[0]);
+        });
+
+        document
+            .getElementById("screenshotSceneBtn")
+            .addEventListener("click", () => screenshotManager.captureScene());
+        document
+            .getElementById("screenshotModelBtn")
+            .addEventListener("click", () => screenshotManager.captureModel());
+
+        document.getElementById("dimBtn").addEventListener("click", () => {
+            dimensionsManager.toggle();
+        });
+
+        document
+            .getElementById("bedBtn")
+            .addEventListener("click", () => this.#toggleBed());
+
+        const helpBtn = document.getElementById("helpBtn");
+        const helpContent = document.getElementById("helpContent");
+        const langMenu = document.getElementById("langMenu");
+
+        if (helpBtn && helpContent) {
+            helpBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                helpContent.classList.toggle("visible");
+                langMenu?.classList.remove("visible");
+            });
+        }
+
+        document.addEventListener("click", () => {
+            helpContent?.classList.remove("visible");
+            langMenu?.classList.remove("visible");
+        });
+
+        const mobileZUp = document.getElementById("mobileZUp");
+        if (mobileZUp) {
+            mobileZUp.addEventListener("click", () => this.#toggleZUp());
+        }
+
+        window.addEventListener("keydown", (e) => {
+            if (e.target.tagName === "INPUT") return;
+            const views = { 1: "iso", 2: "front", 3: "top", 4: "side" };
+            if (views[e.key]) this.setView(views[e.key]);
+        });
+
+        globalEvents.on("model:transformed", () => {
+            dimensionsManager.forceUpdate();
+            if (state.get("bedActive")) bedManager.checkFit(false);
+        });
+
+        globalEvents.on("bed:fitChanged", ({ fits, changed }) => {
+            const t = i18n.t;
+            if (!fits) showToast(t.toastNoFit, 4000, "error");
+            else if (changed) showToast(t.toastFits, 2000, "success");
+        });
+
+        globalEvents.on("language:change", () =>
+            buildGui(this.#controls, this)
+        );
+
+        document.addEventListener("visibilitychange", () => {
+            this.#controls.autoRotate = document.hidden
+                ? false
+                : state.get("autoRotate");
+        });
+
+        window.addEventListener("resize", () => sceneManager.handleResize());
+    }
+
+    #toggleZUp() {
+        const rot = state.rotation;
+        const isZUp = rot.x === -90 && rot.y === 0 && rot.z === 0;
+        const t = i18n.t;
 
         if (isZUp) {
-            rotationState.x = savedRotationState.x;
-            rotationState.y = savedRotationState.y;
-            rotationState.z = savedRotationState.z;
-            applyRotation();
-            updateOrientationDisplay();
-            showToast(translations[getCurLang()].toastZReset, 2000, "success");
+            state.restoreRotation();
+            showToast(t.toastZReset, 2000, "success");
         } else {
-            setSavedRotationState(
-                rotationState.x,
-                rotationState.y,
-                rotationState.z
-            );
-            rotationState.x = -90;
-            rotationState.y = 0;
-            rotationState.z = 0;
-            applyRotation();
-            updateOrientationDisplay();
-            showToast(translations[getCurLang()].toastZ, 2000, "success");
+            state.saveRotation();
+            state.setRotation(-90, 0, 0);
+            showToast(t.toastZ, 2000, "success");
         }
-    });
-}
 
-const helpBtn = document.getElementById("helpBtn");
-const helpContent = document.getElementById("helpContent");
-const langMenu = document.getElementById("langMenu");
-
-helpBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    helpContent.classList.toggle("visible");
-    langMenu.classList.remove("visible");
-});
-
-document.addEventListener("click", () => {
-    helpContent.classList.remove("visible");
-    langMenu.classList.remove("visible");
-});
-
-setBuildGuiCallback(() => buildGui(controls));
-window.buildGui = () => buildGui(controls);
-
-let lastDimensionUpdate = 0;
-const dimensionUpdateInterval = isMobile ? 100 : 16;
-
-function animate() {
-    requestAnimationFrame(animate);
-    controls.update();
-
-    adaptiveQuality.update();
-
-    const now = performance.now();
-    if (now - lastDimensionUpdate >= dimensionUpdateInterval) {
-        updateDimensions();
-        lastDimensionUpdate = now;
+        modelManager.applyRotation();
+        updateOrientationDisplay();
     }
 
-    composer.render();
-}
+    async #handleFile(file) {
+        const t = i18n.t;
+        showToast(t.loading, 10000, "info");
 
-window.addEventListener("resize", handleResize);
+        try {
+            const name = await modelManager.loadFile(
+                file,
+                this.#controls,
+                this.setView.bind(this),
+                t
+            );
+            showToast(`${t.toastLoaded}: ${name}`, 2500, "success");
 
-document.addEventListener("visibilitychange", () => {
-    if (document.hidden) {
-        controls.autoRotate = false;
-    } else {
-        controls.autoRotate = state.autoRotate;
+            if (state.get("bedActive")) {
+                setTimeout(() => bedManager.checkFit(true), 300);
+            }
+        } catch (e) {
+            console.error(e);
+            showToast(t.toastErr || e.message, 5000, "error");
+        }
     }
-});
 
-detectLanguage();
-buildGui(controls);
-animate();
+    #toggleBed() {
+        const active = !state.get("bedActive");
+        state.set("bedActive", active);
+        document.getElementById("bedBtn").classList.toggle("active", active);
 
-const segments = isMobile ? 100 : 150;
-const radialSegments = isMobile ? 16 : 24;
-const testGeo = new THREE.TorusKnotGeometry(10, 2.5, segments, radialSegments);
-const testMesh = new THREE.Mesh(testGeo, material);
-testMesh.castShadow = true;
-testMesh.receiveShadow = true;
-scene.add(testMesh);
-setMesh(testMesh);
-setCurrentMesh(testMesh);
-placeOnFloor();
-fitCamera(testMesh, controls, setView);
+        if (active) {
+            const preset = state.get("lastActiveBedPreset") || "ender3";
+            state.set("bedPreset", preset);
+            bedManager.update();
+            setTimeout(() => bedManager.checkFit(true), 100);
+        } else {
+            state.set("bedPreset", "none");
+            bedManager.update();
+        }
 
-if (state.bedActive) {
-    setTimeout(() => {
-        checkModelFits(true);
-    }, 500);
+        buildGui(this.#controls, this);
+    }
+
+    #createTestModel() {
+        const segments = isMobile ? 100 : 150;
+        const radial = isMobile ? 16 : 24;
+        const geometry = new THREE.TorusKnotGeometry(10, 2.5, segments, radial);
+        const mesh = new THREE.Mesh(geometry, materialManager.material);
+        mesh.castShadow = mesh.receiveShadow = true;
+
+        sceneManager.scene.add(mesh);
+        modelManager.mesh = mesh;
+        modelManager.placeOnFloor();
+        modelManager.fitCamera(this.#controls, this.setView.bind(this));
+
+        if (state.get("bedActive")) {
+            setTimeout(() => bedManager.checkFit(true), 500);
+        }
+
+        dimensionsManager.init();
+    }
+
+    setView(type, center = null, dim = null) {
+        const mesh = modelManager.mesh;
+
+        if (!center || !dim) {
+            if (!mesh) return;
+            const box = new THREE.Box3().setFromObject(mesh);
+            center = box.getCenter(new THREE.Vector3());
+            dim = Math.max(...box.getSize(new THREE.Vector3()).toArray());
+        }
+
+        const dist = dim * 1.8;
+        this.#controls.target.copy(center);
+        const pos = center.clone();
+
+        const offsets = {
+            iso: new THREE.Vector3(dist, dist * 0.6, dist),
+            front: new THREE.Vector3(0, 0, dist),
+            top: new THREE.Vector3(0, dist, 0),
+            side: new THREE.Vector3(dist, 0, 0),
+        };
+
+        pos.add(offsets[type] || offsets.iso);
+        sceneManager.camera.position.copy(pos);
+        sceneManager.camera.lookAt(center);
+        sceneManager.updateShadows();
+    }
+
+    #animate() {
+        requestAnimationFrame(() => this.#animate());
+
+        this.#controls.update();
+        this.#qualityManager.update();
+
+        const now = performance.now();
+        if (now - this.#lastDimUpdate >= (isMobile ? 100 : 16)) {
+            dimensionsManager.update();
+            this.#lastDimUpdate = now;
+        }
+
+        sceneManager.render();
+    }
 }
 
-initDimensionsFromState();
+const app = new App();
+
+window.setView = (type) => app.setView(type);
+window.buildGui = () => buildGui(app.controls, app);
+
+window.app = app;
