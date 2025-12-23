@@ -9,13 +9,35 @@ class DimensionsManager {
     #box = new THREE.Box3();
     #size = new THREE.Vector3();
     #labels = {
-        container: document.getElementById("dimLabels"),
-        x: document.getElementById("dimX"),
-        y: document.getElementById("dimY"),
-        z: document.getElementById("dimZ"),
+        container: null,
+        x: null,
+        y: null,
+        z: null,
     };
     #lastCamera = { pos: new THREE.Vector3(), quat: new THREE.Quaternion() };
     #needsUpdate = true;
+
+    constructor() {
+        globalEvents.on("mesh:change", () => {
+            this.#needsUpdate = true;
+            if (state.get("showDimensions")) {
+                setTimeout(() => this.forceUpdate(), 50);
+            }
+        });
+
+        globalEvents.on("model:transformed", () => {
+            this.#needsUpdate = true;
+        });
+    }
+
+    #ensureLabelsRef() {
+        if (!this.#labels.container) {
+            this.#labels.container = document.getElementById("dimLabels");
+            this.#labels.x = document.getElementById("dimX");
+            this.#labels.y = document.getElementById("dimY");
+            this.#labels.z = document.getElementById("dimZ");
+        }
+    }
 
     markForUpdate() {
         this.#needsUpdate = true;
@@ -27,31 +49,48 @@ class DimensionsManager {
     }
 
     init() {
+        this.#ensureLabelsRef();
+
         if (state.get("showDimensions")) {
-            setTimeout(() => this.#apply(), 300);
+            setTimeout(() => this.#apply(), 100);
         }
     }
 
     hide() {
-        if (this.#helper) this.#helper.visible = false;
-        if (this.#labels.container)
-            this.#labels.container.style.display = "none";
+        this.#ensureLabelsRef();
+
+        if (this.#helper) {
+            this.#helper.visible = false;
+        }
+
+        this.#labels.container?.classList.remove("visible");
     }
 
     show() {
-        if (this.#helper && state.get("showDimensions"))
+        this.#ensureLabelsRef();
+
+        if (!state.get("showDimensions")) return;
+
+        if (this.#helper) {
             this.#helper.visible = true;
-        if (this.#labels.container && state.get("showDimensions"))
-            this.#labels.container.style.display = "";
+        }
+
+        this.#labels.container?.classList.add("visible");
+
+        this.#updateLabelPositions();
     }
 
     update() {
         if (!state.get("showDimensions")) return;
         if (!modelManager.mesh) return;
 
+        this.#ensureLabelsRef();
+
         if (this.#needsUpdate) {
-            this.#recalculate();
-            this.#ensureHelper();
+            const success = this.#recalculate();
+            if (success) {
+                this.#ensureHelper();
+            }
         }
 
         const { camera } = sceneManager;
@@ -63,53 +102,91 @@ class DimensionsManager {
             this.#updateLabelPositions();
             this.#lastCamera.pos.copy(camera.position);
             this.#lastCamera.quat.copy(camera.quaternion);
+            this.#needsUpdate = false;
         }
     }
 
     forceUpdate() {
         if (!state.get("showDimensions")) return;
+
+        this.#ensureLabelsRef();
         this.#needsUpdate = true;
-        this.#recalculate();
-        this.#ensureHelper();
+
+        const success = this.#recalculate();
+
+        if (success) {
+            this.#ensureHelper();
+            if (this.#helper) {
+                this.#helper.visible = true;
+            }
+            this.#labels.container?.classList.add("visible");
+        }
+
         this.#updateLabelPositions();
     }
 
     #apply() {
+        this.#ensureLabelsRef();
+
         const btn = document.getElementById("dimBtn");
         const show = state.get("showDimensions");
 
         btn?.classList.toggle("active", show);
-        this.#labels.container?.classList.toggle("visible", show);
 
         if (show) {
             this.#disposeHelper();
             this.#needsUpdate = true;
-            this.#recalculate();
-            this.#ensureHelper();
+
+            if (!modelManager.mesh) {
+                this.#labels.container?.classList.add("visible");
+                return;
+            }
+
+            const success = this.#recalculate();
+
+            if (success) {
+                this.#ensureHelper();
+                if (this.#helper) {
+                    this.#helper.visible = true;
+                }
+            }
+
+            this.#labels.container?.classList.add("visible");
+            this.#updateLabelPositions();
         } else {
+            this.#labels.container?.classList.remove("visible");
             this.#disposeHelper();
         }
     }
 
     #recalculate() {
         const mesh = modelManager.mesh;
-        if (!mesh) return false;
+        if (!mesh) {
+            return false;
+        }
 
         mesh.updateMatrixWorld(true);
         this.#box.setFromObject(mesh);
-        if (this.#box.isEmpty()) return false;
+
+        if (this.#box.isEmpty()) {
+            return false;
+        }
 
         this.#box.getSize(this.#size);
 
-        if (this.#labels.x)
+        if (this.#labels.x) {
             this.#labels.x.innerText = `X: ${this.#size.x.toFixed(1)} mm`;
-        if (this.#labels.y)
+        }
+        if (this.#labels.y) {
             this.#labels.y.innerText = `Z: ${this.#size.z.toFixed(1)} mm`;
-        if (this.#labels.z)
+        }
+        if (this.#labels.z) {
             this.#labels.z.innerText = `Y: ${this.#size.y.toFixed(1)} mm`;
+        }
 
-        if (this.#helper) this.#helper.box.copy(this.#box);
-        this.#needsUpdate = false;
+        if (this.#helper) {
+            this.#helper.box.copy(this.#box);
+        }
 
         if (state.get("bedActive")) {
             globalEvents.emit("dimensions:updated");
@@ -119,11 +196,17 @@ class DimensionsManager {
     }
 
     #ensureHelper() {
-        if (!this.#helper && !this.#box.isEmpty()) {
+        if (this.#box.isEmpty()) return;
+
+        if (!this.#helper) {
             this.#helper = new THREE.Box3Helper(this.#box, 0x00b894);
             this.#helper.renderOrder = 999;
             sceneManager.scene.add(this.#helper);
+        } else {
+            this.#helper.box.copy(this.#box);
         }
+
+        this.#helper.visible = state.get("showDimensions");
     }
 
     #disposeHelper() {
@@ -137,7 +220,16 @@ class DimensionsManager {
     }
 
     #updateLabelPositions() {
-        if (this.#box.isEmpty()) return;
+        this.#ensureLabelsRef();
+
+        if (this.#box.isEmpty()) {
+            ["x", "y", "z"].forEach((axis) => {
+                if (this.#labels[axis]) {
+                    this.#labels[axis].style.left = "-9999px";
+                }
+            });
+            return;
+        }
 
         const { min, max } = this.#box;
         const positions = {
@@ -156,12 +248,13 @@ class DimensionsManager {
 
         const v = pos.clone().project(sceneManager.camera);
 
-        if (Math.abs(v.z) > 1) {
-            el.style.display = "none";
+        if (v.z > 1 || v.z < -1) {
+            el.style.left = "-9999px";
         } else {
-            el.style.display = "block";
-            el.style.left = `${(v.x * 0.5 + 0.5) * innerWidth}px`;
-            el.style.top = `${(-v.y * 0.5 + 0.5) * innerHeight}px`;
+            const x = (v.x * 0.5 + 0.5) * window.innerWidth;
+            const y = (-v.y * 0.5 + 0.5) * window.innerHeight;
+            el.style.left = `${x}px`;
+            el.style.top = `${y}px`;
         }
     }
 }
