@@ -39,8 +39,14 @@ class StateManager extends EventEmitter {
 
     setMultiple(updates, save = true) {
         Object.entries(updates).forEach(([key, value]) => {
-            if (key in this.#state) this.#state[key] = value;
+            if (key in this.#state) {
+                const oldValue = this.#state[key];
+                this.#state[key] = value;
+
+                this.emit("change", { key, value, oldValue });
+            }
         });
+
         if (save) storage.saveMultiple(updates);
         this.emit("change:multiple", updates);
     }
