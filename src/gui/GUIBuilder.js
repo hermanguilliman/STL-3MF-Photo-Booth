@@ -1,7 +1,6 @@
 import { GUI } from "lil-gui";
 
 import { state } from "../core/StateManager.js";
-import { globalEvents } from "../core/EventEmitter.js";
 import { PRINTERS } from "../core/constants.js";
 import { materialManager } from "../managers/MaterialManager.js";
 import { lightingManager } from "../managers/LightingManager.js";
@@ -62,7 +61,9 @@ function setupStateSync(localState) {
 
         const updateRecursive = (parent) => {
             parent.controllers.forEach((c) => {
-                if (c.property === key) c.updateDisplay();
+                if (c.property === key) {
+                    c.updateDisplay();
+                }
             });
             parent.folders.forEach((f) => updateRecursive(f));
         };
@@ -70,7 +71,7 @@ function setupStateSync(localState) {
         if (gui) updateRecursive(gui);
     };
 
-    const unsubscribe = globalEvents.on("change", syncCallback);
+    const unsubscribe = state.on("change", syncCallback);
 
     const originalDestroy = gui.destroy.bind(gui);
     gui.destroy = () => {
@@ -324,8 +325,8 @@ function buildOrientationFolder(t, app) {
             modelManager.applyRotation();
         },
         zUp: () => {
-            const rot = state.rotation;
-            const isZUp = rot.x === -90 && rot.y === 0 && rot.z === 0;
+            const r = state.rotation;
+            const isZUp = r.x === -90 && r.y === 0 && r.z === 0;
 
             if (isZUp) {
                 state.restoreRotation();
