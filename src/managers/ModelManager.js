@@ -4,6 +4,7 @@ import { ThreeMFLoader } from "three/examples/jsm/loaders/3MFLoader.js";
 
 import { sceneManager } from "./SceneManager.js";
 import { materialManager } from "./MaterialManager.js";
+import { progressManager } from "./ProgressManager.js";
 import { state } from "../core/StateManager.js";
 import { globalEvents } from "../core/EventEmitter.js";
 
@@ -135,36 +136,165 @@ class ModelManager {
             throw new Error(t.toastErr);
         }
 
-        const buffer = await this.#readFile(file);
+        progressManager.show(file.name);
 
-        const newMesh =
-            ext === "stl" ? this.#parseSTL(buffer) : this.#parse3MF(buffer);
+        try {
+            const buffer = await this.#readFileWithProgress(file);
 
-        if (!newMesh) throw new Error("Empty model");
+            progressManager.update(50, t.parsing || "Parsing...");
 
-        state.setRotation(0, 0, 0);
-        state.saveRotation();
+            await this.#nextFrame();
 
-        this.mesh = newMesh;
+            const newMesh = await this.#parseWithProgress(ext, buffer, t);
 
-        this.applyRotation();
-        this.fitCamera(controls, setViewFn);
+            if (!newMesh) {
+                throw new Error("Empty model");
+            }
 
-        return file.name;
+            progressManager.update(90, t.finalizing || "Finalizing...");
+            await this.#nextFrame();
+
+            state.setRotation(0, 0, 0);
+            state.saveRotation();
+
+            this.mesh = newMesh;
+
+            this.applyRotation();
+
+            progressManager.update(95);
+            await this.#nextFrame();
+
+            this.fitCamera(controls, setViewFn);
+
+            progressManager.hide();
+
+            return file.name;
+        } catch (error) {
+            progressManager.hideImmediately();
+            throw error;
+        }
     }
 
-    #readFile(file) {
+    #readFileWithProgress(file) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
-            reader.onload = (e) => resolve(e.target.result);
-            reader.onerror = reject;
+
+            reader.onprogress = (event) => {
+                if (event.lengthComputable) {
+                    const percent = (event.loaded / event.total) * 50;
+                    progressManager.update(percent, "Reading file...");
+                }
+            };
+
+            reader.onload = (e) => {
+                progressManager.update(50, "File loaded");
+                resolve(e.target.result);
+            };
+
+            reader.onerror = () => {
+                reject(new Error("Failed to read file"));
+            };
+
             reader.readAsArrayBuffer(file);
         });
     }
 
-    #parseSTL(buffer) {
+    async #parseWithProgress(ext, buffer, t) {
+        if (buffer.byteLength > 50 * 1024 * 1024) {
+            progressManager.setIndeterminate(
+                t.parsing || "Parsing large file..."
+            );
+        }
+
+        if (ext === "stl") {
+            return await this.#parseSTLAsync(buffer);
+        } else {
+            return await this.#parse3MFAsync(buffer);
+        }
+    }
+
+    async #parseSTLAsync(buffer) {
+        progressManager.update(55, "Parsing geometry...");
+        await this.#nextFrame();
+
         const geometry = this.#loaderSTL.parse(buffer);
 
+        progressManager.update(70, "Computing normals...");
+        await this.#nextFrame();
+
+        geometry.computeVertexNormals();
+
+        progressManager.update(80, "Creating mesh...");
+        await this.#nextFrame();
+
+        const mesh = new THREE.Mesh(geometry, materialManager.material);
+        mesh.castShadow = mesh.receiveShadow = true;
+
+        geometry.computeBoundingBox();
+        const center = new THREE.Vector3();
+        geometry.boundingBox.getCenter(center);
+        mesh.geometry.translate(-center.x, -center.y, -center.z);
+
+        progressManager.update(85);
+        return mesh;
+    }
+
+    async #parse3MFAsync(buffer) {
+        progressManager.update(55, "Parsing 3MF...");
+        await this.#nextFrame();
+
+        const group = this.#loader3MF.parse(buffer);
+        if (!group?.traverse) throw new Error("Invalid 3MF");
+
+        progressManager.update(65, "Processing meshes...");
+        await this.#nextFrame();
+
+        group.rotation.x = -Math.PI / 2;
+        group.updateMatrixWorld();
+
+        let meshCount = 0;
+        group.traverse((child) => {
+            if (child.isMesh) meshCount++;
+        });
+
+        let processed = 0;
+        group.traverse((child) => {
+            if (!child.isMesh) return;
+
+            child.material = materialManager.material;
+            child.castShadow = child.receiveShadow = true;
+
+            if (child.geometry) {
+                child.geometry.deleteAttribute("normal");
+                child.geometry.computeVertexNormals();
+            }
+
+            processed++;
+            const meshProgress = 65 + (processed / meshCount) * 15;
+            progressManager.update(meshProgress);
+        });
+
+        progressManager.update(82, "Centering model...");
+        await this.#nextFrame();
+
+        const box = new THREE.Box3().setFromObject(group);
+        const center = box.getCenter(new THREE.Vector3());
+
+        const wrapper = new THREE.Group();
+        wrapper.add(group);
+
+        group.position.set(-center.x, 0, -center.z);
+
+        progressManager.update(85);
+        return wrapper;
+    }
+
+    #nextFrame() {
+        return new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+
+    #parseSTL(buffer) {
+        const geometry = this.#loaderSTL.parse(buffer);
         geometry.computeVertexNormals();
 
         const mesh = new THREE.Mesh(geometry, materialManager.material);

@@ -15,6 +15,8 @@ export const es = {
     tooltipZUp: "Z arriba (como en slicer)",
     tooltipDimensions: "Dimensiones",
     loading: "CARGANDO...",
+    parsing: "Procesando...",
+    finalizing: "Finalizando...",
     toastLoaded: "✅ Cargado",
     toastCopied: "✅ Copiado al portapapeles!",
     toastSaved: "✅ Guardado",

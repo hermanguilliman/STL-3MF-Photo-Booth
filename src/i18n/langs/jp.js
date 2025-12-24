@@ -15,6 +15,8 @@ export const jp = {
     tooltipZUp: "Z軸を上（スライサー向き）",
     tooltipDimensions: "寸法",
     loading: "読み込み中...",
+    parsing: "解析中...",
+    finalizing: "完了中...",
     toastLoaded: "✅ 読み込み完了",
     toastCopied: "✅ クリップボードにコピー!",
     toastSaved: "✅ ダウンロード保存",

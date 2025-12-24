@@ -15,6 +15,8 @@ export const en = {
     tooltipZUp: "Z Up (Slicer)",
     tooltipDimensions: "Dimensions",
     loading: "LOADING...",
+    parsing: "Parsing...",
+    finalizing: "Finalizing...",
     toastLoaded: "✅ Loaded",
     toastCopied: "✅ Copied to clipboard!",
     toastSaved: "✅ Saved to downloads",

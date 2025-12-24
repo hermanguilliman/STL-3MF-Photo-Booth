@@ -15,6 +15,8 @@ export const cn = {
     tooltipZUp: "Z轴向上（切片软件方向）",
     tooltipDimensions: "尺寸",
     loading: "加载中...",
+    parsing: "解析中...",
+    finalizing: "完成中...",
     toastLoaded: "✅ 已加载",
     toastCopied: "✅ 已复制到剪贴板！",
     toastSaved: "✅ 已保存到下载",

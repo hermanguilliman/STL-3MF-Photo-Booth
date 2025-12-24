@@ -205,7 +205,6 @@ class App {
 
     async #handleFile(file) {
         const t = i18n.t;
-        showToast(t.loading, 10000, "info");
 
         try {
             const name = await modelManager.loadFile(
