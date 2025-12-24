@@ -60,7 +60,7 @@ class ScreenshotManager {
             shadowPlane.visible = prevState.plane;
             bedManager.group.visible = prevState.bed;
             dimensionsManager.show();
-            sceneManager.render();
+
             this.#restoreQuality();
 
             const blob = await this.#canvasToBlob(cropped);
@@ -88,6 +88,12 @@ class ScreenshotManager {
 
     #restoreQuality() {
         QualityManager.instance?.restoreAfterScreenshot();
+
+        if (sceneManager.renderer.shadowMap.enabled) {
+            sceneManager.renderer.shadowMap.needsUpdate = true;
+        }
+        sceneManager.render();
+        sceneManager.render();
     }
 
     #renderToCanvas() {
