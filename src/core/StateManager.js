@@ -38,17 +38,25 @@ class StateManager extends EventEmitter {
     }
 
     setMultiple(updates, save = true) {
+        const changes = [];
+
         Object.entries(updates).forEach(([key, value]) => {
             if (key in this.#state) {
                 const oldValue = this.#state[key];
                 this.#state[key] = value;
+                changes.push({ key, value, oldValue });
 
                 this.emit("change", { key, value, oldValue });
+
+                this.emit(`change:${key}`, { value, oldValue });
             }
         });
 
         if (save) storage.saveMultiple(updates);
-        this.emit("change:multiple", updates);
+
+        if (changes.length > 0) {
+            this.emit("change:multiple", { changes, updates });
+        }
     }
 
     get layerUniforms() {

@@ -7,6 +7,7 @@ import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { FXAAShader } from "three/examples/jsm/shaders/FXAAShader.js";
 
 import { state } from "../core/StateManager.js";
+import { globalEvents } from "../core/EventEmitter.js";
 import { getInitialQuality, isMobile } from "./QualityManager.js";
 
 class SceneManager {
@@ -63,16 +64,14 @@ class SceneManager {
             e.preventDefault();
             console.warn("WebGL Context Lost");
 
-            cancelAnimationFrame(window.animationId);
-            showToast("WebGL Context Lost. Please reload.", 10000, "error");
+            globalEvents.emit("webgl:contextlost");
         });
 
         this.renderer.domElement.addEventListener(
             "webglcontextrestored",
             () => {
                 console.log("WebGL Context Restored");
-
-                window.location.reload();
+                globalEvents.emit("webgl:contextrestored");
             }
         );
 

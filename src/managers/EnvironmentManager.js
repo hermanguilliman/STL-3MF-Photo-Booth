@@ -40,6 +40,7 @@ class EnvironmentManager {
             (error) => {
                 console.warn("Failed to load HDRI:", error);
                 this.#loading = false;
+                globalEvents.emit("hdri:error", { fileName, error });
             }
         );
     }

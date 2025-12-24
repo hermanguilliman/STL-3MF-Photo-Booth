@@ -21,7 +21,7 @@ class LightingManager {
 
         while (lightGroup.children.length) {
             const child = lightGroup.children[0];
-            child.shadow?.map?.dispose();
+            this.#disposeLight(child);
             lightGroup.remove(child);
         }
 
@@ -30,6 +30,19 @@ class LightingManager {
 
         lightGroup.add(...create());
         sceneManager.updateShadows();
+    }
+
+    #disposeLight(light) {
+        if (light.shadow?.map) {
+            light.shadow.map.dispose();
+        }
+
+        if (light.shadow?.camera) {
+        }
+
+        if (light.target && light.target.parent) {
+            light.target.parent.remove(light.target);
+        }
     }
 
     #shadowLight(light) {
@@ -42,7 +55,6 @@ class LightingManager {
         light.castShadow = true;
         light.shadow.mapSize.setScalar(settings.shadowMapSize);
         light.shadow.bias = -0.0001;
-
         light.shadow.normalBias = 0.05;
 
         if (isMobile) light.shadow.radius = 2;

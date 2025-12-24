@@ -22,6 +22,8 @@ class App {
     #lastDimUpdate = 0;
     #dimUpdateInterval;
     #isInitialized = false;
+    #animationId = null;
+    #isRunning = true;
 
     constructor() {
         this.#dimUpdateInterval = isMobile ? 100 : 50;
@@ -157,6 +159,19 @@ class App {
 
         globalEvents.on("language:change", () => buildGui(this.controls, this));
 
+        globalEvents.on("webgl:contextlost", () => {
+            this.#isRunning = false;
+            if (this.#animationId) {
+                cancelAnimationFrame(this.#animationId);
+                this.#animationId = null;
+            }
+            showToast("WebGL Context Lost. Please reload.", 10000, "error");
+        });
+
+        globalEvents.on("webgl:contextrestored", () => {
+            window.location.reload();
+        });
+
         document.addEventListener("visibilitychange", () => {
             this.controls.autoRotate = document.hidden
                 ? false
@@ -206,7 +221,7 @@ class App {
             }
         } catch (e) {
             console.error(e);
-            showToast(t.toastErr || e.message, 5000, "error");
+            showToast(t.toastFileError || e.message, 5000, "error");
         }
     }
 
@@ -275,7 +290,9 @@ class App {
     }
 
     #animate() {
-        requestAnimationFrame(() => this.#animate());
+        if (!this.#isRunning) return;
+
+        this.#animationId = requestAnimationFrame(() => this.#animate());
 
         this.controls.update();
         this.#qualityManager.update();
