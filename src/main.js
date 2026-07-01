@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 import { state } from "./core/StateManager.js";
+import { storage } from "./core/StorageManager.js";
 import { globalEvents } from "./core/EventEmitter.js";
 import { sceneManager } from "./managers/SceneManager.js";
 import { materialManager } from "./managers/MaterialManager.js";
@@ -84,7 +85,21 @@ class App {
         buildGui(this.controls, this);
     }
 
+    #setupTheme() {
+        const root = document.documentElement;
+        const saved = storage.load().theme === "light" ? "light" : "dark";
+        root.dataset.theme = saved;
+
+        document.getElementById("themeBtn")?.addEventListener("click", () => {
+            const next = root.dataset.theme === "light" ? "dark" : "light";
+            root.dataset.theme = next;
+            storage.save("theme", next);
+        });
+    }
+
     #setupEventListeners() {
+        this.#setupTheme();
+
         const dropZone = document.getElementById("drop-zone");
         if (dropZone) {
             window.addEventListener("dragover", (e) => {

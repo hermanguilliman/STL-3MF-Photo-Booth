@@ -4,6 +4,7 @@ const STORAGE_VERSION = 4;
 export const DEFAULT_SETTINGS = {
     version: STORAGE_VERSION,
     language: null,
+    theme: "dark",
 
     color: "#bdc3c7",
     preset: "basic",
